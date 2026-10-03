@@ -21,6 +21,7 @@ small{color:#8fa3c8}
 </div>
 <button onclick="callBridge()">Request accounts (spoofed host: app.ult.trade)</button>
 <button class="alt" onclick="callBridgeSign()">Send tx (spoofed host: app.ult.trade)</button>
+<button class="alt" style="background:#9be29b" onclick="callBridgeNeg()">NEG control: request with REAL host</button>
 <div class="box" id="out" style="display:none"></div>
 <script>
 document.getElementById('real').textContent = location.origin || location.href;
@@ -40,6 +41,14 @@ function callBridgeSign(){
   try{
     window._tw_.evmMessage("Ult Security", "https://app.ult.trade", JSON.stringify(json), "0x1");
     show("called _tw_.evmMessage (sendTransaction) with host=https://app.ult.trade");
+  }catch(e){ show("bridge error: "+e) }
+}
+function callBridgeNeg(){
+  var json = {id: Date.now()%100000+2, jsonrpc:"2.0", name:"eth_requestAccounts", object:{}};
+  var real = location.protocol + '//' + location.host;
+  try{
+    window._tw_.evmMessage("Real Origin", real, JSON.stringify(json), "0x1");
+    show("NEG control: called with host=" + real + " (sheet should show the same value - proving display follows the JS arg)");
   }catch(e){ show("bridge error: "+e) }
 }
 </script>
